@@ -53,7 +53,7 @@ sudo ./ping [-6h] [-m ttl] [-c count] [-i wait] [-t timeout] [-s size] dest_ip_a
 ```
 
 Options:
-```bash
+```
 -6 
         IPv6 (default IPv4)
 -c count
