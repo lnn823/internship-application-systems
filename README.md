@@ -49,6 +49,7 @@ Please provide the source code only, a compiled binary is not necessary.
 ## Junxiong Lin's GO version of ping
 To run the ping program: Simply type
 ```bash
+go build ping.go
 sudo ./ping [-6h] [-m ttl] [-c count] [-i wait] [-t timeout] [-s size] dest_ip_addr
 ```
 
