@@ -3,6 +3,7 @@
     <words>
       <w>icmp</w>
       <w>pconn</w>
+      <w>stddev</w>
     </words>
   </dictionary>
 </component>

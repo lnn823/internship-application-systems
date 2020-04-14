@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 type ICMPHead struct {
@@ -20,6 +23,12 @@ type ICMPPackage struct {
 	Head ICMPHead
 	Payload [64]byte
 }
+
+var (
+	packageTrans int
+	packageRecv int
+	durations []float64
+)
 
 func setChecksum(icmp ICMPHead) uint16 {
 	var buffer bytes.Buffer
@@ -67,7 +76,8 @@ func sendRequest(ipAddr *net.IPAddr, seq int) error {
 		return err
 	}
 	start := time.Now()
-	_ = IPconn.SetReadDeadline(time.Now().Add(time.Second * 2))
+	packageTrans++
+	_ = IPconn.SetReadDeadline(time.Now().Add(time.Second))
 	rBuffer := make([]byte, 65535)
 	length, err := IPconn.Read(rBuffer)
 	if err != nil {
@@ -75,7 +85,9 @@ func sendRequest(ipAddr *net.IPAddr, seq int) error {
 		return err
 	}
 	end := time.Now()
-	dTime := float32(end.Sub(start).Nanoseconds()) / 1e6
+	packageRecv++
+	dTime := float64(end.Sub(start).Nanoseconds()) / 1e6
+	durations = append(durations, dTime)
 	fmt.Printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n", len(rBuffer[28:length]), ipAddr.String(), icmp.Seq, int(rBuffer[8]), dTime)
 	return nil
 }
@@ -91,12 +103,49 @@ func main() {
 		fmt.Printf("ping: cannot resolve %s: Unknown host\n", destAddr)
 		return
 	}
+	c := make(chan os.Signal)
+	signal.Notify(c, syscall.SIGINT)
+	go func() {
+		s := <-c
+		if s == syscall.SIGINT {
+			fmt.Println()
+			fmt.Printf("--- %s ping statistics ---\n", destAddr)
+			percent := (1 - float64(packageRecv) / float64(packageTrans)) * 100
+			fmt.Printf("%d packets transmitted, %d packets received, %.1f%% packet loss\n", packageTrans, packageRecv, percent)
+			if packageRecv > 0 {
+				min, avg, max, stddev := statistics(durations)
+				fmt.Printf("round-trip min/avg/max/stddev = %.3f/%.3f/%.3f/%.3f ms\n", min, avg, max, stddev)
+			}
+			os.Exit(0)
+		}
+	}()
 	fmt.Printf("PING %s (%s):\n", destAddr, ipAddr.String())
 	for i := 0; true; i++ {
 		err = sendRequest(ipAddr, i)
 		if err != nil {
-			fmt.Printf("Error: %s\n", err)
 		}
 		time.Sleep(time.Second)
 	}
+}
+
+func statistics(arr []float64) (float64, float64, float64, float64) {
+	max := 0.0
+	sum := 0.0
+	min := math.MaxFloat64
+	for _, value := range arr {
+		if value > max {
+			max = value
+		}
+		if value < min {
+			min = value
+		}
+		sum += value
+	}
+	avg := sum / float64(len(arr))
+	sqd := 0.0
+	for _, value := range arr {
+		sqd += math.Pow(value - avg, 2)
+	}
+	stddev := math.Sqrt(sqd / float64(len(arr)))
+	return min, avg, max, stddev
 }
