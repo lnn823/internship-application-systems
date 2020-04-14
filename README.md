@@ -1,5 +1,7 @@
 # Cloudflare Internship Application: Systems
 
+### Junxiong Lin (linjunxiong1997@gmail.com)
+
 ## What is it?
 
 Please write a small Ping CLI application for MacOS or Linux.
@@ -43,3 +45,25 @@ Please provide the source code only, a compiled binary is not necessary.
 1. Add support for both IPv4 and IPv6
 2. Allow to set TTL as an argument and report the corresponding "time exceeded” ICMP messages
 3. Any additional features listed in the ping man page or which you think would be valuable
+
+## Junxiong Lin's GO version of ping
+To run the ping program: Simply type
+```bash
+sudo ./ping [-6h] [-m ttl] [-c count] [-i wait] [-t timeout] [-s size] dest_ip_addr
+```
+
+Options:
+```bash
+-6 
+        IPv6 (default IPv4)
+-c count
+    	Stop after sending (and receiving) count ECHO_RESPONSE packets. (default 2147483647)
+-i wait
+    	Wait wait seconds between sending each packet.  The default is to wait for one second between each packet. (default 1)
+-m ttl
+    	TTL limit (default 2147483647)
+-s size
+    	Specify the number of data bytes to be sent. (default 56)
+-t timeout
+    	Specify a timeout, in seconds, before ping exits regardless of how many packets have been received. (default 2147483647)
+```

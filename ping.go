@@ -20,11 +20,6 @@ type ICMPHead struct {
 	Seq uint16
 }
 
-type ICMPPackage struct {
-	Head ICMPHead
-	Payload [64]byte
-}
-
 var (
 	packageTrans int
 	packageRecv int
@@ -35,6 +30,7 @@ var (
 	wait int
 	timeout int
 	help bool
+	size int
 )
 
 func setChecksum(icmp ICMPHead) uint16 {
@@ -77,13 +73,11 @@ func sendRequest(ipAddr *net.IPAddr, seq int) error {
 		return err
 	}
 	defer IPconn.Close()
-	var buffer bytes.Buffer
-	content := [64]byte{0}
-	icmpPackage := ICMPPackage{
-		Head: icmp,
-		Payload: content,
+	buffer := new(bytes.Buffer)
+	_ = binary.Write(buffer, binary.BigEndian, icmp)
+	for i :=0 ; i < size; i++ {
+		buffer.WriteByte(0xff)
 	}
-	_ = binary.Write(&buffer, binary.BigEndian, icmpPackage)
 	_, err = IPconn.Write(buffer.Bytes())
 	if err != nil {
 		fmt.Printf("Error: %s\n", err)
@@ -104,7 +98,7 @@ func sendRequest(ipAddr *net.IPAddr, seq int) error {
 	durations = append(durations, dTime)
 	ttl := int(rBuffer[8])
 	if ttl <= ttlLimit {
-		fmt.Printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n", len(rBuffer[28:length]), ipAddr.String(), icmp.Seq, ttl, dTime)
+		fmt.Printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n", len(rBuffer[20:length]), ipAddr.String(), icmp.Seq, ttl, dTime)
 	} else {
 		fmt.Printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms. TIME EXCEEDED\n", len(rBuffer[28:length]), ipAddr.String(), icmp.Seq, ttl, dTime)
 	}
@@ -122,10 +116,11 @@ func main() {
 	flag.IntVar(&wait, "i", 1, "Wait wait seconds between sending each packet.  The default is to wait for one second between each packet.")
 	flag.IntVar(&timeout, "t", math.MaxInt32, "Specify a timeout, in seconds, before ping exits regardless of how many packets have been received.")
 	flag.BoolVar(&help, "h", false, "This help")
+	flag.IntVar(&size, "s", 56, "Specify the number of data bytes to be sent.")
 	flag.Parse()
 	if help {
-		fmt.Println("ping GO version\n" +
-			"Usage: ping [-6h] [-m ttl] [-c count] [-i wait] [-t timeout] dest_ip_addr\n" +
+		fmt.Println("Ping GO version\n" +
+			"Usage: sudo ./ping [-6h] [-m ttl] [-c count] [-i wait] [-t timeout] [-s size] dest_ip_addr\n" +
 			"\n" +
 			"Options: ")
 		flag.PrintDefaults()
@@ -153,7 +148,7 @@ func main() {
 			os.Exit(0)
 		}
 	}()
-	fmt.Printf("PING %s (%s):\n", destAddr, ipAddr.String())
+	fmt.Printf("PING %s (%s): %d data bytes\n", destAddr, ipAddr.String(), size)
 	for i := 0; i < int(math.Min(float64(count), float64(timeout / wait))); i++ {
 		err = sendRequest(ipAddr, i)
 		if err != nil {
