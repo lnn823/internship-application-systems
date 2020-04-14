@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"math"
 	"net"
@@ -28,6 +29,12 @@ var (
 	packageTrans int
 	packageRecv int
 	durations []float64
+	ipv6 bool
+	ttlLimit int
+	count int
+	wait int
+	timeout int
+	help bool
 )
 
 func setChecksum(icmp ICMPHead) uint16 {
@@ -57,7 +64,14 @@ func sendRequest(ipAddr *net.IPAddr, seq int) error {
 		Seq: uint16(seq),
 	}
 	icmp.Checksum = setChecksum(icmp)
-	IPconn, err := net.DialIP("ip4:icmp", nil, ipAddr)
+	var IPconn *net.IPConn
+	var err error
+	if ipv6 {
+		IPconn, err = net.DialIP("ip6:ipv6-icmp", nil, ipAddr)
+		icmp.Type = 128
+	} else {
+		IPconn, err = net.DialIP("ip4:icmp", nil, ipAddr)
+	}
 	if err != nil {
 		fmt.Printf("Error: %s\n", err)
 		return err
@@ -88,7 +102,12 @@ func sendRequest(ipAddr *net.IPAddr, seq int) error {
 	packageRecv++
 	dTime := float64(end.Sub(start).Nanoseconds()) / 1e6
 	durations = append(durations, dTime)
-	fmt.Printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n", len(rBuffer[28:length]), ipAddr.String(), icmp.Seq, int(rBuffer[8]), dTime)
+	ttl := int(rBuffer[8])
+	if ttl <= ttlLimit {
+		fmt.Printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n", len(rBuffer[28:length]), ipAddr.String(), icmp.Seq, ttl, dTime)
+	} else {
+		fmt.Printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms. TIME EXCEEDED\n", len(rBuffer[28:length]), ipAddr.String(), icmp.Seq, ttl, dTime)
+	}
 	return nil
 }
 
@@ -97,7 +116,22 @@ func main() {
 		fmt.Println("Not enough arguments")
 		os.Exit(0)
 	}
-	destAddr := os.Args[1]
+	flag.BoolVar(&ipv6, "6", false, "IPv6")
+	flag.IntVar(&ttlLimit, "m", math.MaxInt32, "TTL limit")
+	flag.IntVar(&count, "c", math.MaxInt32, "Stop after sending (and receiving) count ECHO_RESPONSE packets.")
+	flag.IntVar(&wait, "i", 1, "Wait wait seconds between sending each packet.  The default is to wait for one second between each packet.")
+	flag.IntVar(&timeout, "t", math.MaxInt32, "Specify a timeout, in seconds, before ping exits regardless of how many packets have been received.")
+	flag.BoolVar(&help, "h", false, "This help")
+	flag.Parse()
+	if help {
+		fmt.Println("ping GO version\n" +
+			"Usage: ping [-6h] [-m ttl] [-c count] [-i wait] [-t timeout] dest_ip_addr\n" +
+			"\n" +
+			"Options: ")
+		flag.PrintDefaults()
+		os.Exit(0)
+	}
+	destAddr := os.Args[len(os.Args) - 1]
 	ipAddr, err := net.ResolveIPAddr("ip", destAddr)
 	if err != nil {
 		fmt.Printf("ping: cannot resolve %s: Unknown host\n", destAddr)
@@ -120,12 +154,23 @@ func main() {
 		}
 	}()
 	fmt.Printf("PING %s (%s):\n", destAddr, ipAddr.String())
-	for i := 0; true; i++ {
+	for i := 0; i < int(math.Min(float64(count), float64(timeout / wait))); i++ {
 		err = sendRequest(ipAddr, i)
 		if err != nil {
 		}
-		time.Sleep(time.Second)
+		for i :=0; i < wait; i++ {
+			time.Sleep(time.Second)
+		}
 	}
+	fmt.Println()
+	fmt.Printf("--- %s ping statistics ---\n", destAddr)
+	percent := (1 - float64(packageRecv) / float64(packageTrans)) * 100
+	fmt.Printf("%d packets transmitted, %d packets received, %.1f%% packet loss\n", packageTrans, packageRecv, percent)
+	if packageRecv > 0 {
+		min, avg, max, stddev := statistics(durations)
+		fmt.Printf("round-trip min/avg/max/stddev = %.3f/%.3f/%.3f/%.3f ms\n", min, avg, max, stddev)
+	}
+	os.Exit(0)
 }
 
 func statistics(arr []float64) (float64, float64, float64, float64) {
